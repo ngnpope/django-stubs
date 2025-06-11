@@ -256,7 +256,7 @@ class DjangoContext:
 
                     expected_types[field_name] = model_set_type
 
-            elif contenttypes_in_apps and isinstance(field, GenericForeignKey):
+            elif contenttypes_in_apps and isinstance(field, GenericForeignKey):  # type: ignore[possibly-undefined]
                 # it's generic, so cannot set specific model
                 field_name = field.name
                 gfk_info = helpers.lookup_class_typeinfo(api, field.__class__)
