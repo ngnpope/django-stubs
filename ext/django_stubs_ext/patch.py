@@ -1,7 +1,6 @@
-import builtins
 import logging
 from collections.abc import Iterable
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, overload
 
 from django import VERSION
 from django.contrib.admin import ModelAdmin
@@ -30,6 +29,7 @@ from django.utils.functional import classproperty
 from django.views.generic.detail import SingleObjectMixin
 from django.views.generic.edit import DeletionMixin, FormMixin
 from django.views.generic.list import MultipleObjectMixin
+from typing_extensions import deprecated
 
 __all__ = ["monkeypatch"]
 
@@ -101,6 +101,18 @@ _need_generic: list[MPGeneric[Any]] = [
 ]
 
 
+@overload
+def monkeypatch(extra_classes: Iterable[type] | None = None) -> None: ...
+
+
+@overload
+@deprecated(
+    "The `include_builtins` argument to `django_stubs_ext.monkeypatch()` is deprecated. "
+    "Use `typing.reveal_type()` or `typing_extensions.reveal_type()` instead."
+)
+def monkeypatch(extra_classes: Iterable[type] | None = None, include_builtins: bool = ...) -> None: ...
+
+
 def monkeypatch(extra_classes: Iterable[type] | None = None, include_builtins: bool = True) -> None:
     """Monkey patch django as necessary to work properly with mypy."""
     # Add the __class_getitem__ dunder.
@@ -113,8 +125,3 @@ def monkeypatch(extra_classes: Iterable[type] | None = None, include_builtins: b
     if extra_classes:
         for cls in extra_classes:
             cls.__class_getitem__ = classmethod(lambda cls, *args, **kwargs: cls)  # type: ignore[attr-defined]
-
-    # Add `reveal_type` and `reveal_locals` helpers if needed:
-    if include_builtins:
-        builtins.reveal_type = lambda obj, /: obj
-        builtins.reveal_locals = lambda: None
