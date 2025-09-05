@@ -4,8 +4,6 @@ from contextlib import suppress
 from typing import Protocol
 
 import pytest
-from _pytest.fixtures import FixtureRequest
-from _pytest.monkeypatch import MonkeyPatch
 from django.db.models import Model
 from django.forms.models import ModelForm
 
@@ -27,8 +25,8 @@ class _MakeGenericClasses(Protocol):
 
 @pytest.fixture(scope="function")
 def make_generic_classes(
-    request: FixtureRequest,
-    monkeypatch: MonkeyPatch,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> _MakeGenericClasses:
     _extra_classes: list[type] = []
 
