@@ -1,10 +1,14 @@
 from collections.abc import Sequence
 
+from django.contrib.auth.models import AnonymousUser
 from django.db.models import Model
 from django.db.models.query import (
+    QuerySet,
+    RawQuerySet,
     aprefetch_related_objects,  # pyright: ignore[reportUnknownVariableType]
     prefetch_related_objects,  # pyright: ignore[reportUnknownVariableType]
 )
+from typing_extensions import assert_type
 
 models_list: list[Model] = []
 prefetch_related_objects(models_list, "pk")
@@ -31,3 +35,19 @@ async def test_async() -> None:
     # failure cases
     await aprefetch_related_objects(models_set, "pk")  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # pyrefly: ignore[bad-argument-type]  # ty: ignore[invalid-argument-type]
     await aprefetch_related_objects(models_frozenset, "pk")  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # pyrefly: ignore[bad-argument-type]  # ty: ignore[invalid-argument-type]
+
+
+def test_in_operator(
+    qs: QuerySet[Model],
+    raw_qs: RawQuerySet[Model],
+    obj: Model,
+    user_or_anon: Model | AnonymousUser,
+    obj_or_none: Model | None,
+) -> None:
+    assert_type(obj in qs, bool)
+    assert_type(obj in raw_qs, bool)
+    assert_type(user_or_anon in qs, bool)
+    assert_type(obj_or_none in qs, bool)
+    assert_type(None in qs, bool)
+    assert_type("test" in qs, bool)
+    assert_type(42 in qs, bool)
