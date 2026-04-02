@@ -87,10 +87,9 @@ class ModelClassInitializer:
         var.is_inferred = True
         return var
 
-    def add_new_node_to_model_class(
+    def add_new_var_to_model_class(
         self, name: str, typ: MypyType, *, no_serialize: bool = False, is_classvar: bool = False
     ) -> None:
-        # TODO: Rename to signal that it is a `Var` that is added..
         helpers.add_new_sym_for_info(
             self.model_classdef.info, name=name, sym_type=typ, no_serialize=no_serialize, is_classvar=is_classvar
         )
@@ -315,7 +314,7 @@ class AddDefaultPrimaryKey(ModelClassInitializer):
                 is_get_nullable=False,
             )
 
-            self.add_new_node_to_model_class(dest_name, Instance(auto_field_info, [set_type, get_type]))
+            self.add_new_var_to_model_class(dest_name, Instance(auto_field_info, [set_type, get_type]))
 
 
 class AddPrimaryKeyAlias(AddDefaultPrimaryKey):
@@ -346,7 +345,7 @@ class AddRelatedModelsId(ModelClassInitializer):
                     f"Cannot find model {field.related_model!r} referenced in field {field.name!r}",
                     ctx=error_context,
                 )
-                self.add_new_node_to_model_class(field.attname, AnyType(TypeOfAny.explicit))
+                self.add_new_var_to_model_class(field.attname, AnyType(TypeOfAny.explicit))
                 continue
 
             if related_model_cls._meta.abstract:
@@ -367,7 +366,7 @@ class AddRelatedModelsId(ModelClassInitializer):
             set_type, get_type = get_field_descriptor_types(
                 field_info, is_set_nullable=is_nullable, is_get_nullable=is_nullable
             )
-            self.add_new_node_to_model_class(field.attname, Instance(field_info, [set_type, get_type]))
+            self.add_new_var_to_model_class(field.attname, Instance(field_info, [set_type, get_type]))
 
 
 class AddManagers(ModelClassInitializer):
@@ -389,7 +388,7 @@ class AddManagers(ModelClassInitializer):
         assert manager_info is not None
         # Reparameterize dynamically created manager with model type
         manager_type = helpers.fill_manager(manager_info, Instance(self.model_classdef.info, []))
-        self.add_new_node_to_model_class(manager_name, manager_type, is_classvar=True)
+        self.add_new_var_to_model_class(manager_name, manager_type, is_classvar=True)
 
     @override
     def run_with_model_cls(self, model_cls: type[Model]) -> None:
@@ -416,7 +415,7 @@ class AddManagers(ModelClassInitializer):
 
             assert self.model_classdef.info.self_type is not None
             manager_type = helpers.fill_manager(manager_info, self.model_classdef.info.self_type)
-            self.add_new_node_to_model_class(manager_name, manager_type, is_classvar=True)
+            self.add_new_var_to_model_class(manager_name, manager_type, is_classvar=True)
 
         if incomplete_manager_defs:
             if not self.api.final_iteration:
@@ -433,7 +432,7 @@ class AddManagers(ModelClassInitializer):
                 if fallback_manager_info is not None:
                     assert self.model_classdef.info.self_type is not None
                     manager_type = helpers.fill_manager(fallback_manager_info, self.model_classdef.info.self_type)
-                    self.add_new_node_to_model_class(manager_name, manager_type, is_classvar=True)
+                    self.add_new_var_to_model_class(manager_name, manager_type, is_classvar=True)
 
                 # Find expression for e.g. `objects = SomeManager()`
                 manager_expr = self.get_manager_expression(manager_name)
@@ -514,7 +513,7 @@ class AddDefaultManagerAttribute(ModelClassInitializer):
             default_manager_info = generated_manager_info
 
         default_manager = helpers.fill_manager(default_manager_info, Instance(self.model_classdef.info, []))
-        self.add_new_node_to_model_class("_default_manager", default_manager, is_classvar=True)
+        self.add_new_var_to_model_class("_default_manager", default_manager, is_classvar=True)
 
 
 class AddReverseLookups(ModelClassInitializer):
@@ -542,7 +541,7 @@ class AddReverseLookups(ModelClassInitializer):
         reverse_lookup_declared = attname in self.model_classdef.info.names
         if isinstance(relation, OneToOneRel):
             if not reverse_lookup_declared:
-                self.add_new_node_to_model_class(
+                self.add_new_var_to_model_class(
                     attname,
                     Instance(
                         self.reverse_one_to_one_descriptor,
@@ -556,7 +555,7 @@ class AddReverseLookups(ModelClassInitializer):
                 assert relation.through is not None
                 through_fullname = helpers.get_class_fullname(relation.through)
                 through_model_info = self.lookup_typeinfo_or_incomplete_defn_error(through_fullname)
-                self.add_new_node_to_model_class(
+                self.add_new_var_to_model_class(
                     attname,
                     Instance(
                         self.many_to_many_descriptor, [Instance(to_model_info, []), Instance(through_model_info, [])]
@@ -566,7 +565,7 @@ class AddReverseLookups(ModelClassInitializer):
             return
         if not reverse_lookup_declared:
             # ManyToOneRel
-            self.add_new_node_to_model_class(
+            self.add_new_var_to_model_class(
                 attname, Instance(self.reverse_many_to_one_descriptor, [Instance(to_model_info, [])]), is_classvar=True
             )
 
