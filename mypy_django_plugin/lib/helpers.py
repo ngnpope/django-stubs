@@ -54,6 +54,7 @@ from mypy.types import (
     get_proper_type,
 )
 from mypy.types import Type as MypyType
+from mypy.typevars import fill_typevars, fill_typevars_with_any
 from typing_extensions import Self
 
 from mypy_django_plugin.lib import fullnames
@@ -120,6 +121,25 @@ def mark_as_annotated_model(model: TypeInfo) -> None:
 
 def is_annotated_model(model: TypeInfo) -> bool:
     return get_django_metadata(model).get("is_annotated_model", False)
+
+
+def get_or_create_annotated_type(api: SemanticAnalyzer, model_info: TypeInfo, annotations_info: TypeInfo) -> TypeInfo:
+    """Look up or create the `Model@AnnotatedWith` synthetic class for *model_info*."""
+    annotated_model_name = model_info.name + "@AnnotatedWith"
+    annotated_model = lookup_fully_qualified_typeinfo(api, model_info.fullname + "@AnnotatedWith")
+    if annotated_model is None:
+        model_type = fill_typevars_with_any(model_info)
+        assert isinstance(model_type, Instance)
+        annotations_type = fill_typevars(annotations_info)
+        assert isinstance(annotations_type, Instance)
+        model_module = api.modules[model_info.module_name]
+        annotated_model = add_new_class_for_module(
+            model_module, name=annotated_model_name, bases=[model_type, annotations_type]
+        )
+        annotated_model.defn.type_vars = annotations_info.defn.type_vars
+        annotated_model.add_type_vars()
+        mark_as_annotated_model(annotated_model)
+    return annotated_model
 
 
 class IncompleteDefnException(Exception):
@@ -229,7 +249,7 @@ class DjangoModel(NamedTuple):
         return cls(cls=model_cls, typ=model_type, is_annotated=is_annotated)
 
 
-def extract_model_type_from_queryset(queryset_type: Instance, api: TypeChecker) -> Instance | None:
+def extract_model_type_from_queryset(queryset_type: Instance) -> Instance | None:
     """Extract the django model `Instance` associated to a queryset `Instance`"""
     for base_type in [queryset_type, *queryset_type.type.bases]:
         if (
@@ -257,8 +277,7 @@ def get_model_info_from_qs_ctx(
     """
     Extract DjangoModel details from a queryset/manager `MethodContext`
     """
-    api = get_typechecker_api(ctx)
-    if not (isinstance(ctx.type, Instance) and (model_type := extract_model_type_from_queryset(ctx.type, api))):
+    if not (isinstance(ctx.type, Instance) and (model_type := extract_model_type_from_queryset(ctx.type))):
         return None
 
     return DjangoModel.from_model_type(model_type, django_context)
@@ -541,20 +560,36 @@ def convert_any_to_type(typ: MypyType, referred_to_type: MypyType) -> MypyType:
     return typ
 
 
+def _get_fallback_typeddict(api: SemanticAnalyzer | CheckerPluginInterface) -> Instance:
+    if isinstance(api, CheckerPluginInterface):
+        return api.named_generic_type("typing._TypedDict", [])
+    return api.named_type("typing._TypedDict", [])
+
+
 def make_typeddict(
     api: SemanticAnalyzer | CheckerPluginInterface,
     fields: dict[str, MypyType],
 ) -> TypedDictType:
     """Create a TypedDict from a python dict of field names and types."""
-    if isinstance(api, CheckerPluginInterface):
-        fallback_type = api.named_generic_type("typing._TypedDict", [])
-    else:
-        fallback_type = api.named_type("typing._TypedDict", [])
     return TypedDictType(
         items=fields,
         required_keys=set(fields.keys()),
         readonly_keys=set(),
-        fallback=fallback_type,
+        fallback=_get_fallback_typeddict(api),
+    )
+
+
+def merge_typeddict(
+    api: SemanticAnalyzer | CheckerPluginInterface,
+    left: TypedDictType,
+    right: TypedDictType,
+) -> TypedDictType:
+    """Merge two TypedDictType type into one with anonymous fallback."""
+    return TypedDictType(
+        items={**left.items, **right.items},
+        required_keys={*left.required_keys, *right.required_keys},
+        readonly_keys={*left.readonly_keys, *right.readonly_keys},
+        fallback=_get_fallback_typeddict(api),
     )
 
 

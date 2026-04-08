@@ -36,6 +36,7 @@ from mypy.types import (
     TupleType,
     TypedDictType,
     TypeOfAny,
+    TypeVarType,
     get_proper_type,
 )
 from mypy.types import Type as MypyType
@@ -335,9 +336,38 @@ def reparametrize_queryset(instance: Instance, args: list[MypyType]) -> Instance
     return instance
 
 
+def _extract_model_type_var_upper_bound(ctx: MethodContext) -> Instance | None:
+    """When the queryset's model type arg is a TypeVar bounded by a Model, return the upper bound."""
+    if not isinstance(ctx.type, Instance):
+        return None
+    for base_type in [ctx.type, *ctx.type.type.bases]:
+        if not len(base_type.args) or base_type.type.has_base(fullnames.MANY_RELATED_MANAGER):
+            continue
+        model = get_proper_type(base_type.args[0])
+        if isinstance(model, TypeVarType):
+            upper = get_proper_type(model.upper_bound)
+            if isinstance(upper, Instance) and helpers.is_model_type(upper.type):
+                return upper
+    return None
+
+
 def extract_proper_type_queryset_annotate(ctx: MethodContext, django_context: DjangoContext) -> MypyType:
     django_model = helpers.get_model_info_from_qs_ctx(ctx, django_context)
     if django_model is None:
+        # When the queryset's model is a TypeVar (e.g. inside a generic queryset method body),
+        # use the TypeVar's upper bound to build a temporary annotated type. This allows
+        # `self.annotate(...)` to return `QS[Model@AnnotatedWith[...]]` which is compatible
+        # with return types declared as `QS[WithAnnotations[_Model, ...]]`.
+        upper_bound = _extract_model_type_var_upper_bound(ctx)
+        if upper_bound is not None:
+            default_return_type = get_proper_type(ctx.default_return_type)
+            if isinstance(default_return_type, Instance):
+                api = helpers.get_typechecker_api(ctx)
+                expression_types = gather_expression_types(ctx)
+                if expression_types:
+                    fields_dict = helpers.make_typeddict(api, expression_types)
+                    upper_annotated = get_annotated_type(api, upper_bound, fields_dict=fields_dict)
+                    return reparametrize_queryset(default_return_type, [upper_annotated, upper_annotated])
         return AnyType(TypeOfAny.from_omitted_generics)
 
     default_return_type = get_proper_type(ctx.default_return_type)
@@ -385,6 +415,32 @@ def extract_proper_type_queryset_annotate(ctx: MethodContext, django_context: Dj
     else:
         row_type = annotated_type
     return reparametrize_queryset(default_return_type, [annotated_type, row_type])
+
+
+def merge_annotations_from_custom_method(ctx: MethodContext, django_context: DjangoContext) -> MypyType:
+    """
+    Method hook for custom QuerySet/Manager methods that return annotated querysets.
+
+    Ensures extra_attrs are set on annotated model Instances (so attribute access works)
+    and merges annotations from the caller queryset with annotations from the return type.
+    """
+    django_model = helpers.get_model_info_from_qs_ctx(ctx, django_context)
+    if django_model is None:
+        return ctx.default_return_type
+
+    default_return_type = get_proper_type(ctx.default_return_type)
+    if not (
+        isinstance(default_return_type, Instance)
+        and (ret_model := helpers.extract_model_type_from_queryset(default_return_type))
+        and helpers.is_annotated_model(ret_model.type)
+        and ret_model.args
+        and isinstance(new_td := get_proper_type(ret_model.args[0]), TypedDictType)
+    ):
+        return ctx.default_return_type
+
+    api = helpers.get_typechecker_api(ctx)
+    annotated_type = get_annotated_type(api, django_model.typ, fields_dict=new_td)
+    return reparametrize_queryset(default_return_type, [annotated_type, annotated_type])
 
 
 def resolve_field_lookups(lookup_exprs: Sequence[Expression], django_context: DjangoContext) -> list[str] | None:
@@ -500,7 +556,7 @@ def _resolve_prefetch_queryset_argument(
     # First try to get queryset type from specialized type arg
     queryset_type = get_proper_type(type_arg)
     if isinstance(queryset_type, Instance):
-        elem_model = helpers.extract_model_type_from_queryset(queryset_type, api)
+        elem_model = helpers.extract_model_type_from_queryset(queryset_type)
         # If we got a valid specific model type, return the queryset type
         if elem_model is not None and elem_model.type.fullname != fullnames.MODEL_CLASS_FULLNAME:
             return queryset_type
@@ -805,7 +861,7 @@ def extract_prefetch_related_annotations(ctx: MethodContext, django_context: Dja
         # 3.b) Extract model type from queryset type (or from the lookup value)
         elem_model: Instance | None = None
         if queryset_type is not None and isinstance(queryset_type, Instance):
-            elem_model = helpers.extract_model_type_from_queryset(queryset_type, api)
+            elem_model = helpers.extract_model_type_from_queryset(queryset_type)
         elif lookup:
             try:
                 observed_model_cls = django_context.resolve_lookup_into_field(qs_model.cls, lookup)[1]
