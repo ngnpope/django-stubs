@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from django.utils.functional import Promise, cached_property, classproperty, lazystr
+from django.contrib.auth.models import User
+from django.utils.functional import Promise, SimpleLazyObject, cached_property, classproperty, lazystr
 from typing_extensions import assert_type, override
 
 if TYPE_CHECKING:
@@ -71,7 +73,11 @@ foo(s)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # pyref
 bar(s)
 
 
-# classproperty usage
+lazy_user: SimpleLazyObject[User] = SimpleLazyObject(User)
+assert_type(lazy_user, SimpleLazyObject[User])
+
+assert_type(copy.copy(lazy_user), SimpleLazyObject[User])
+assert_type(copy.deepcopy(lazy_user), SimpleLazyObject[User])
 
 
 class Bam:

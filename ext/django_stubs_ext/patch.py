@@ -26,7 +26,7 @@ from django.db.models.query import BaseIterable, ModelIterable, Prefetch, QueryS
 from django.forms.formsets import BaseFormSet
 from django.forms.models import BaseModelForm, BaseModelFormSet, ModelChoiceField, ModelFormOptions
 from django.utils.connection import BaseConnectionHandler, ConnectionProxy
-from django.utils.functional import classproperty
+from django.utils.functional import LazyObject, classproperty
 from django.views.generic.detail import SingleObjectMixin
 from django.views.generic.edit import DeletionMixin, FormMixin
 from django.views.generic.list import MultipleObjectMixin
@@ -94,6 +94,7 @@ _need_generic: list[MPGeneric[Any]] = [
     MPGeneric(ForeignKey, (4, 1)),
     MPGeneric(RawQuerySet),
     MPGeneric(classproperty),
+    MPGeneric(LazyObject),
     MPGeneric(ConnectionProxy),
     MPGeneric(ModelFormOptions),
     MPGeneric(Options),
