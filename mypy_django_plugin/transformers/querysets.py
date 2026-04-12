@@ -268,10 +268,21 @@ def _resolve_output_field_type(expr_type: MypyType) -> MypyType | None:
         if isinstance(func_type, CallableType):
             field_type = get_proper_type(func_type.ret_type)
 
-    if not isinstance(field_type, Instance):
-        return None
+    if isinstance(field_type, Instance):
+        result = helpers.get_private_descriptor_type(field_type.type, "_pyi_private_get_type", is_nullable=False)
+        if not isinstance(get_proper_type(result), AnyType):
+            return result
 
-    return helpers.get_private_descriptor_type(field_type.type, "_pyi_private_get_type", is_nullable=False)
+    # Fallback: extract _GT from generic type args that are Field subclasses.
+    # This preserves nullability from null=True (e.g., IntegerField(null=True) → int | None).
+    for arg in proper.args:
+        arg_proper = get_proper_type(arg)
+        if isinstance(arg_proper, Instance) and arg_proper.type.has_base(fullnames.FIELD_FULLNAME):
+            type_args = helpers.get_field_type_args(arg_proper)
+            if type_args is not None and not isinstance(type_args.get, AnyType):
+                return type_args.get
+
+    return None
 
 
 def gather_expression_types(ctx: MethodContext) -> dict[str, MypyType]:
