@@ -88,8 +88,21 @@
 -   case: valid_filter_with_lookup
     main: |
         from myapp.models import User
+
+        # Simple lookups which expect the same type.
         User.objects.filter(username__contains='hello')
         User.objects.filter(age__gt=1)
+
+        # The `__in` lookup expects an iterable of the field type.
+        # Regression test for https://github.com/typeddjango/django-stubs/issue/xxxx
+        User.objects.filter(age__in=[1, 2, 3])
+        User.objects.filter(age__in=(1, 2, 3))
+        User.objects.filter(age__in=range(4))
+        User.objects.filter(age__in=123)  # E: Incompatible type for lookup 'age__in': (got "int", expected "Iterable[str | int]")  [misc]
+        User.objects.filter(age__in=None)  # E: Incompatible type for lookup 'age__in': (got "None", expected "Iterable[str | int]")  [misc]
+        User.objects.filter(age__in="abc")  # Doesn't error because Django allows `Iterable[str]` here so `str` is valid.
+        User.objects.filter(age__in=[User()])  # Doesn't error because Django turns this into a list of PKs.
+        User.objects.filter(age__in=(User(),))  # E: Incompatible type for lookup 'age__in': (got "tuple[User]", expected "Iterable[str | int]")  [misc]
     installed_apps:
         - myapp
     files:
