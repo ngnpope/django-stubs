@@ -47,7 +47,7 @@ class AdminSite:
     def register(
         self,
         model_or_iterable: type[Model] | Iterable[type[Model]],
-        admin_class: type[ModelAdmin] | None = ...,
+        admin_class: type[ModelAdmin[Model]] | None = ...,
         **options: Any,
     ) -> None: ...
     def unregister(self, model_or_iterable: type[Model] | Iterable[type[Model]]) -> None: ...
